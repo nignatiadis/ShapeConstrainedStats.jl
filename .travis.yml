@@ -1,0 +1,15 @@
+language: julia
+
+os:
+  - linux
+  - osx
+julia:
+  - nightly
+  - 1.1
+
+notifications:
+  email:
+    on_success: never
+    on_failure: change
+
+coveralls: true
