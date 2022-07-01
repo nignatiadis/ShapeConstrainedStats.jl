@@ -28,6 +28,19 @@ robertson_vec = [22.5; 23.333; 20.833; 24.25]
 robertson_ws =  [3.0;3.0;3.0;2.0]
 robertson_fit = [22.222; 22.222; 22.222; 24.25]
 
+robertson_expanded_xs = [1.0; 2.0; 3.5; 1.0; 2.0; 3.5; 4.0; 1.0; 2.0; 3.5; 4]
+robertson_expanded_vec = [robertson_vec[1:3];
+                          robertson_vec[1:3] .+ 1;
+                          robertson_vec[4] .+ 0.5;
+                          robertson_vec[1:3] .- 1;
+                          robertson_vec[4] .- 0.5]
+
+robertson_expanded_fit = [robertson_fit[1:3];
+                          robertson_fit[1:3];
+                          robertson_fit[4];
+                          robertson_fit[1:3];
+                          robertson_fit[4]]
+
 @testset "Isotonic regression type" begin
 
     @test maximum(predict(fit(IsotonicRegression, robertson_vec; lb=0.0, ub=24.0))) == 24.0
@@ -63,4 +76,9 @@ robertson_fit = [22.222; 22.222; 22.222; 24.25]
 
     random_idx = sample([1,2,3,4],10)
     @test predict(iso_fit_no_xs_sorted_ws_type, random_idx) ≈ robertson_fit[random_idx]
+
+    iso_fit_expanded = fit(IsotonicRegression, robertson_expanded_xs, robertson_expanded_vec)
+    @test predict(iso_fit_expanded) ≈ robertson_expanded_fit atol=1e-5
+    @test iso_fit_expanded.fitted_ys ≈ robertson_fit atol=1e-5
+
 end

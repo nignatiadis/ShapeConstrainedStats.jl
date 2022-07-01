@@ -5,56 +5,80 @@ Compute the Bar index between `x` and `y`. If `y` is missing, compute
 the Bar index between all pairs of columns of `x`.
 
 """
-
 struct IsotonicRegression{S<:Number, T<:Number,
                           TV<:AbstractVector{T},
                           SV<:AbstractVector{S},
                           SW<:AbstractVector,
-                          R<:AbstractVector{Int}} <: RegressionModel
+                          R} <: RegressionModel
     sorted_xs::TV
     sorted_ys::SV #sorted by xs
     sorted_ws::SW
     fitted_ys::SV
-    xs_rank::R
+    rank_xs::R
     lb::S
     ub::S
 end
 
 function fit(::Type{IsotonicRegression}, X::AbstractVector, Y::AbstractVector;
              wts=Ones(Y),
-             lb=nothing, ub=nothing,
-             dofit::Bool=true)
+             lb=nothing, ub=nothing)
 
     n = length(X)
     if n != length(Y)
         throw(DimensionMismatch("Lengths of X and Y mismatch"))
     end
 
-    if (issorted(X))
-        xs_rank = 1:n
+    rank_xs = sortperm(X)
+    sorted_xs = X[rank_xs]
+    inv_rank_xs = invperm(rank_xs) # X == sorted_xs[inv_rank_Xs]
+    sorted_ys = Y[rank_xs]
+    sorted_ws = wts[rank_xs]
+
+    sorted_xs_unique, lens_sorted_xs = rle(sorted_xs)
+    n_unique = length(sorted_xs_unique)
+
+    if n_unique == n
+        sorted_xs_unique = sorted_xs
+        sorted_ys_unique = sorted_ys
+        sorted_ws_unique = sorted_ws
+        denserank_xs = inv_rank_xs
     else
-        xs_rank = ordinalrank(X)
+        sorted_ys_unique = zeros(eltype(sorted_ys), n_unique)
+        sorted_ws_unique = zeros(eltype(wts), n_unique)
+        denserank_xs = zeros(eltype(rank_xs), n)
+        counter = zero(Int)
+        for i in Base.OneTo(n_unique)
+            for j in Base.OneTo(lens_sorted_xs[i])
+                counter+=1
+                sorted_ys_unique[i] += sorted_ys[counter]
+                sorted_ws_unique[i] += sorted_ws[counter]
+                denserank_xs[counter] = i
+            end
+        end
+        sorted_ys_unique ./= sorted_ws_unique
+        denserank_xs = denserank_xs[inv_rank_xs]
     end
 
-    sorted_xs = X[xs_rank]
-    sorted_ys = Y[xs_rank]
-    sorted_ws = wts[xs_rank]
-
-    if (lb == nothing) && (ub == nothing)
-        lb, ub = extrema(sorted_ys)
+    if (lb === nothing) && (ub === nothing)
+        lb, ub = extrema(sorted_ys_unique)
     end
-    if lb == nothing
-        lb = minimum(sorted_ys)
+    if lb === nothing
+        lb = minimum(sorted_ys_unique)
     end
-    if ub == nothing
-        ub = maximum(sorted_ys)
+    if ub === nothing
+        ub = maximum(sorted_ys_unique)
     end
 
-    fitted_ys = isotonic_regression!(copy(sorted_ys), sorted_ws)
+    fitted_ys = isotonic_regression(sorted_ys_unique, sorted_ws_unique)
 
     fitted_ys = max.(min.(fitted_ys, ub), lb)
-    isofit = IsotonicRegression(sorted_xs, sorted_ys, sorted_ws, fitted_ys,
-                                xs_rank, lb, ub)
+    isofit = IsotonicRegression(sorted_xs_unique,
+            sorted_ys_unique,
+            sorted_ws_unique,
+            fitted_ys,
+            denserank_xs,
+            lb,
+            ub)
     isofit
 end
 
@@ -119,13 +143,8 @@ end
 length(iso::IsotonicRegression) = 1
 broadcast(iso::IsotonicRegression) = Ref(iso)
 
-function predict(iso::IsotonicRegression)
-    iso.fitted_ys[iso.xs_rank]
-end
 
-"""
 
-"""
 function predict(iso::IsotonicRegression, x::Number)
     sorted_xs = iso.sorted_xs
     fitted_ys = iso.fitted_ys
@@ -144,12 +163,15 @@ function predict(iso::IsotonicRegression, x::Number)
         y_r = fitted_ys[idxr]
         x_l = sorted_xs[idxl]
         x_r = sorted_xs[idxr]
-        # TODO: need to actually handle ties rather than this hack!!!
         λ = (x_l == x_r) ? zero(eltype(y_l)) : (x - x_l)/(x_r - x_l)
         y_fit = λ*y_r + (1-λ)*y_l
     end
     y_fit
 end
 
-# Make below efficient?
+# TODO: Make below efficient
 predict(iso::IsotonicRegression, xs) = predict.(Ref(iso), xs)
+
+function predict(iso::IsotonicRegression)
+    iso.fitted_ys[iso.rank_xs]
+end
